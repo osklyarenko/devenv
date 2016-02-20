@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+PG_HOST=127.0.0.1
+PG_PORT=5432
+PG_DATABASE=processing_test
+PG_USER=postgres
+PG_PASSWORD=postgres
+
+
+function configure {
+    echo ""
+}
+
+function command_failed {
+	if [ $? -ne 0 ] ; then
+        echo $1
+        exit 1
+    fi	
+}
+
+function validate {
+
+    nc -z $PG_HOST $PG_PORT 1>/dev/null 2>&1
+
+    command_failed "Postgres $PG_HOST:$PG_PORT can't be reached"    
+    echo "Postgres $PG_HOST:$PG_PORT is reachable"
+
+
+    PGPASSWORD=$PG_PASSWORD; psql -U $PG_USER -h $PG_HOST -p $PG_PORT -d $PG_DATABASE -c "select count(*) from processing.applications;" 1>/dev/null &2>1	   
+    
+    command_failed "Postgres $PG_HOST:$PG_PORT connection failed"
+    echo "Postgres $PG_HOST:$PG_PORT connection succeeded"
+}
+
+function _mvn {
+	mvn $*
+}
+
+function _git {
+	git $*
+}
+
+
+read -d '' FUN_parse_pr <<"EOF"
+	puts "Hello to #{ARGV[0]} from #{ARGV[1]}"	
+EOF
+
+function fun {	
+	_FUN=$1
+
+	shift
+	ruby -e "${!_FUN}" $* ; echo $?
+}
+
+fun 'FUN_parse_pr' Zenyk Oleh
+
+function pr {
+	_BRANCH=${2:-PR$1}
+	echo $_BRANCH
+
+	git fetch origin pull/$1/head:$_BRANCH
+}
+
+validate
+
+case $1 in 
+	mvn )
+		shift ; _mvn $*
+	;;
+	git )
+		shift ; _git $*
+	;;
+	pr )
+		shift ; pr $*
+	;;
+esac 
