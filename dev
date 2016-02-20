@@ -6,8 +6,31 @@ PG_DATABASE=processing_test
 PG_USER=postgres
 PG_PASSWORD=postgres
 
+read -d '' init_db <<- EOF
+	#!/usr/bin/env ruby	
+
+	ActiveRecord::Schema.define do
+		create_table :branches, :force => true do |t|
+			t.column :name, :string, :null => false
+			t.column :commit_hash, :string, :null => false
+			
+			t.timestamps
+		end
+	end
+EOF 
+def init_db
+
+function fun {	
+	_FUN=$1
+
+	shift
+	ruby -e "${!_FUN}" $* ; echo $?
+}
 
 function configure {
+
+	mkdir -p '.dev'
+	fun 'fun_init_db'
 
     rm -f .git/hooks/pre-receive
     echo "$FUN_hook_pre_receive" > .git/hooks/pre-receive    
@@ -30,7 +53,7 @@ function validate {
     echo "Postgres $PG_HOST:$PG_PORT is reachable"
 
 
-    PGPASSWORD=$PG_PASSWORD; psql -U $PG_USER -h $PG_HOST -p $PG_PORT -d $PG_DATABASE -c "select count(*) from processing.applications;" 1>/dev/null &2>1	   
+    export PGPASSWORD=$PG_PASSWORD; psql -U $PG_USER -h $PG_HOST -p $PG_PORT -d $PG_DATABASE -c "select count(*) from processing.applications;" 1>/dev/null &2>1	   
     
     command_failed "Postgres $PG_HOST:$PG_PORT connection failed"
     echo "Postgres $PG_HOST:$PG_PORT connection succeeded"
@@ -44,19 +67,67 @@ function _git {
 	git $*
 }
 
+function def {
+	echo ""
+	read -d '' _BODY <<- EOF
+		#!/usr/bin/env ruby	
 
-read -d '' FUN_parse_pr <<"EOF"
+		require 'rubygems'
+		require 'active_record'
+
+		ActiveRecord::Base.logger = Logger.new(STDOUT)
+
+		ActiveRecord::Base.establish_connection(
+			:adapter => 'sqlite3',
+			:database => '.dev/env.db'
+		)
+
+		class Branch < ActiveRecord::Base
+		end
+
+		${!1}
+
+	EOF
+
+	read -d '' -r export declare "fun_$1" <<- EOF
+		$_BODY
+	EOF 
+}
+
+read -d '' switch_branch <<- EOF
+
+	_branch = ARGV[0]
+	_hash = ARGV[1]
+
+	if Branch.count	== 0
+		Branch.create(name: _branch, commit_hash:_hash)
+	end
+
+	record = Branch.order(created_at: :desc).take
+	unless record.name == _branch and record.commit_hash == _hash
+		Branch.create(name: _branch, commit_hash:_hash)
+	end
+EOF ; 
+def switch_branch
+
+
+function status {
+	echo "status"
+}
+
+function _branch {
+	_BRANCH=$1
+
+	git checkout $1
+	_HASH=$(git rev-parse HEAD)
+
+	fun 'fun_switch_branch' $_BRANCH $_HASH
+}
+
+read -d '' FUN_parse_pr <<- EOF
 	puts "Hello to #{ARGV[0]} from #{ARGV[1]}"	
 EOF
 
-function fun {	
-	_FUN=$1
-
-	shift
-	ruby -e "${!_FUN}" $* ; echo $?
-}
-
-fun 'FUN_parse_pr' Zenyk Oleh
 
 function pr {
 	_BRANCH=${2:-PR$1}
@@ -76,5 +147,14 @@ case $1 in
 	;;
 	pr )
 		shift ; pr $*
+	;;
+	configure ) 
+		shift ; configure $*
+	;;
+	branch )
+		shift ; _branch $*
+	;;
+	status )
+		shift ; status $*
 	;;
 esac 
