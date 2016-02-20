@@ -8,7 +8,11 @@ PG_PASSWORD=postgres
 
 
 function configure {
-    echo ""
+
+    rm -f .git/hooks/pre-receive
+    echo "$FUN_hook_pre_receive" > .git/hooks/pre-receive    
+
+    echo "Installed a pre-receive git hook"
 }
 
 function command_failed {
